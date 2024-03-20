@@ -7,6 +7,19 @@ https://creativecommons.org/licenses/by-nc/4.0/deed.en,,,,
 Author: Dimitris Mylonas: dimitris.mylonas@nulondon.ac.uk,,,,
 ,,,,"""
 
+"""
+TODO
+most rgb values have duplicates, for each rgb value find the most common prediction 
+for it, and use that value in the dataset; the dataset should only have one of
+each rgb value - DONE
+
+for the centroids of the colors (part 2) (use original dataset for this):
+for each color, average out every set of rgb values that was predicted to be 
+that color, and treat the resulting mean as the centroid
+then for each color that is predicted, take the euclidean distance between
+the input rgb, and the centroid rgb of that color
+"""
+
 import pandas as pd
 import numpy as np
 import seaborn as sns
@@ -17,28 +30,51 @@ from sklearn.neighbors import KNeighborsRegressor
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import precision_score, recall_score, f1_score
 from sklearn.preprocessing import StandardScaler
+from statistics import mode
 
-# process color names by removing whitespace and punctuation, and lowercasing all
-# separate dataframe into input and output values
-# return train and test sets afterwards
-def preprocess(df):
+def unique_rgb_parsing(df):
+    # finding most common color prediction per rgb value
+    df = pd.read_csv('colour_naming_data-1.csv')
     colors_cleaned = [c.strip().lower().translate(string.punctuation) for c in df['colour_name']]
-    # remove whitespace and punctuation, lowercase all
+    # remove whitespace, punctuation, and lowercase the whole color name
 
     df.pop('colour_name') # remove the unprocessed color names, use processed ones
     df.pop('sample_id') # this column is unneeded
     df['colors'] = colors_cleaned # processed color names
 
-    colors = df.pop('colors').values # y value, or the names of the colors
-    rgb = df.values # x values, or the rgb values
+    rgb_to_color = {} # dict used to store color predictions per rgb
+    unique_rgb = [] # 2d list that i will create new dataframe from
 
-    df['R'] = pd.to_numeric(df['R'])
-    df['G'] = pd.to_numeric(df['G'])
-    df['B'] = pd.to_numeric(df['B'])
-    # to make sure all of the input values are numeric
+    for index, row in df.iterrows():
+        rgb = tuple([row['R'], row['G'], row['B']]) # will be used as key
+        if rgb in rgb_to_color.keys():
+            rgb_to_color[rgb].append(row['colors'])
+            # each rgb will correspond to a list of all the predictions it has
+            # if this rgb value has been seen before, append current prediction to value list
+        else:
+            rgb_to_color[rgb] = [row['colors']]
+            # if this rgb value is new, create new list as its value with current prediction
+
+    for rgb in rgb_to_color.keys():
+        colors = rgb_to_color[rgb]
+        most_common = mode(colors) # statistics.mode gets most common prediction
+        # in the case of a tie, the first one to appear will be used
+        unique_rgb.append([int(rgb[0]), int(rgb[1]), int(rgb[2]), most_common])
+        # 2d list, each inner list is [R, G, B, color name]
+
+    df2 = pd.DataFrame(unique_rgb, columns=['R', 'G', 'B', 'colors'])
+    # create & return new dataframe from unique_rgb 2d list
+    return df2
+
+# separate dataframe into input and output values
+# return train and test sets afterwards
+def preprocess(df):
+    colors = df.pop('colors').values  # y value, or the names of the colors
+    rgb = df.values  # x values, or the rgb values
 
     # setting up train/test
-    X_train, X_test, y_train, y_test = train_test_split(rgb, colors, test_size=0.2, random_state=2)
+    X_train, X_test, y_train, y_test = train_test_split(rgb, colors,
+                                            test_size=0.2, random_state=4)
 
     scaler = StandardScaler()
     X_train, X_test = scaler.fit_transform(X_train), scaler.transform(X_test)
@@ -47,9 +83,9 @@ def preprocess(df):
     return X_train, X_test, y_train, y_test
 
 def regress(upper_bound, X_train, X_test, y_train, y_test):
-    # each element will be an array of:
+    # each element of fitness_scores will be an array of:
     # [n_neighbors, precision_score, recall_score, f1_score]
-    # takes upper bound of n_neighbors as input for organization
+    # this function takes upper bound of n_neighbors as input
     fitness_scores = []
     # loop through n_neighbors to test each one's performance
     for i in range(1, upper_bound + 1):
@@ -59,17 +95,22 @@ def regress(upper_bound, X_train, X_test, y_train, y_test):
         knn.fit(X_train, y_train) # fit the model
         y_pred = knn.predict(X_test) # test the model on test values
 
-        prec = precision_score(y_pred, y_test, average='weighted', zero_division=0)
-        rec = recall_score(y_pred, y_test, average='weighted', zero_division=0)
-        f1 = f1_score(y_pred, y_test, average='weighted', zero_division=0)
-        fitness_scores.append([i, prec, rec, f1])
+        prec = round(precision_score(y_pred, y_test, average='weighted',
+                                     zero_division=0), 3)
+        rec = round(recall_score(y_pred, y_test, average='weighted',
+                                 zero_division=0), 3)
+        # the recall score is equal to the knn.score metric
+        f1 = round(f1_score(y_pred, y_test, average='weighted', zero_division=0), 3)
         # get precision, recall, and f1 scores, add to array
         # zero_division=0 argument is used to avoid edge cases where output values
         # can be chosen 0 times; this is due to average=weighted argument
+        fitness_scores.append([i, prec, rec, f1])
 
-        print(f"the weighted precision score, weighted recall score, and weighted f1 score for {i} "
+        print(f"The weighted precision score, weighted recall score, "
+              f"and weighted f1 score for {i} "
               f"neighbor(s) are {prec}, {rec}, and {f1} respectively")
         # print performance of each one
+
 
     return fitness_scores
 
@@ -93,9 +134,11 @@ def fitness_graphs(fitness_scores):
 
 def main():
     df = pd.read_csv('colour_naming_data-1.csv')
-    X_train, X_test, y_train, y_test = preprocess(df)
+    df2 = unique_rgb_parsing(df) # df2 will be the dataframe with unique values
+    X_train, X_test, y_train, y_test = preprocess(df2) # returns train/test values
     fitness_scores = regress(12, X_train, X_test, y_train, y_test)
-    fitness_graphs(fitness_scores)
+    # generates fitness scores with the train/test values
+    fitness_graphs(fitness_scores) # generates graphs from fitness_scores
 
 if __name__ == '__main__':
     main()
