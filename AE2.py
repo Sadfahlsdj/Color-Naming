@@ -43,6 +43,7 @@ from statistics import mode
 from statistics import mean
 from random import randint
 from math import sqrt
+import networkx as nx
 
 warnings.filterwarnings( "ignore", module = "matplotlib\..*" )
 
@@ -184,15 +185,19 @@ def generate_centroids(df):
         else:
             color_to_rgb[c] = [rgb]
 
-    color_to_rgb_centroid = {}
+    color_to_rgb_centroid_dict = {}
+    color_to_rgb_centroid_list = []
     for color in color_to_rgb.keys():
         avg_r = mean([r[0] for r in color_to_rgb[color]])
         avg_g = mean([r[1] for r in color_to_rgb[color]])
         avg_b = mean([r[2] for r in color_to_rgb[color]])
 
-        color_to_rgb_centroid[color] = list([avg_r, avg_g, avg_b])
+        color_to_rgb_centroid_dict[color] = list([avg_r, avg_g, avg_b])
+        color_to_rgb_centroid_list.append(list([color, avg_r, avg_g, avg_b]))
 
-    return color_to_rgb_centroid
+    # color_to_rgb_centroid_dict used in predictions_vs_centroids
+    # color_to_rgb_centroid_list used in weighted_graph
+    return color_to_rgb_centroid_dict, color_to_rgb_centroid_list
 
 def predictions_vs_centroids(df, knn, centroids, X_test, loops=10):
     """
@@ -205,8 +210,6 @@ def predictions_vs_centroids(df, knn, centroids, X_test, loops=10):
     for i in range(1, loops + 1):
         index = randint(0, l)
         r, g, b = X_test[index][0], X_test[index][1], X_test[index][2]
-        # r, g, b = randint(0, 255), randint(0, 255), randint(0, 255)
-        # random rgb to use for this step
         prediction = knn.predict([[r, g, b]])[0]
         # trained knn is passed as function input, this predicts on random rgb
         rgb = centroids[prediction]
@@ -231,6 +234,56 @@ def predictions_vs_centroids(df, knn, centroids, X_test, loops=10):
     ax.bar([d[1] for d in distances], [d[2] for d in distances], color=color)
     plt.show()
 
+def distance_normalized(r1, g1, b1, r2, g2, b2):
+    return sqrt((r1 - r2) ** 2 + (g1 - g2) ** 2 + (b1 - b2) ** 2) / sqrt(255 ** 2 * 3)
+def weighted_graph(centroids):
+    """Alice uses object-oriented methods to create and visualise a weighted
+    graph of colour synonyms where each node is the centroid of each
+    unique colour name in the dataset connected to all other nodes by edges
+    weighted by their distance.
+    """
+    G_full = nx.Graph()
+    G = nx.Graph()
+    # G_full will include all of the colors together
+    # G will be the graph to be displayed, which only has 10 colors
+    # and their corresponding connections
+
+    for i in range(len(centroids)):
+        for j in range(i + 1, len(centroids)):
+            G_full.add_edge(centroids[i][0], centroids[j][0], weight=distance_normalized(
+                centroids[i][1], centroids[j][1], centroids[i][2], centroids[j][2], centroids[i][3],
+                centroids[j][3]
+            ))
+            if i <= 10 and j <= 10:
+                # creation of the smaller graph
+                G.add_edge(centroids[i][0], centroids[j][0], weight=distance_normalized(
+                    centroids[i][1], centroids[j][1], centroids[i][2], centroids[j][2], centroids[i][3],
+                    centroids[j][3]
+                ))
+
+    # two different edge lengths depending on weight
+    # elarge will have colors that are "farther apart" with a larger distance
+    elarge = [(u, v) for (u, v, d) in G.edges(data=True) if d["weight"] > 0.5]
+    esmall = [(u, v) for (u, v, d) in G.edges(data=True) if d["weight"] <= 0.5]
+
+    pos = nx.spring_layout(G, seed=7)
+    # positions for all nodes - seeded for reproducibility
+
+    # nodes
+    nx.draw_networkx_nodes(G, pos, node_size=2)
+
+    # edges
+    nx.draw_networkx_edges(G, pos, edgelist=elarge, width=1)
+    nx.draw_networkx_edges(
+        # farther apart colors have the solid lines at the moment
+        # closer color have dotted lines
+        G, pos, edgelist=esmall, width=1, alpha=0.5, edge_color="b", style="dashed"
+    )
+
+    # node labels
+    nx.draw_networkx_labels(G, pos, font_size=7, font_family="sans-serif")
+
+    plt.show()
 
 def main():
     df = pd.read_csv('colour_naming_data-1.csv')
@@ -243,8 +296,10 @@ def main():
     # returns fitness scores and the trained neural network
     fitness_graphs(fitness_scores) # generates graphs from fitness_scores
 
-    centroids = generate_centroids(df) # use original df that has duplicates for this
-    predictions_vs_centroids(df, knn, centroids, X_test,10)
+    centroids_dict, centroids_list = generate_centroids(df) # use original df that has duplicates for this
+    predictions_vs_centroids(df, knn, centroids_dict, X_test,10)
+
+    weighted_graph(centroids_list)
 
 if __name__ == '__main__':
     main()
