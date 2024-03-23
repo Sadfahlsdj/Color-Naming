@@ -13,18 +13,23 @@ most rgb values have duplicates, for each rgb value find the most common predict
 for it, and use that value in the dataset; the dataset should only have one of
 each rgb value - DONE
 
-3d scatter plot for the test colors
+3d scatter plot for the test colors - DONE
 
 for the centroids of the colors (part 2) (use original dataset for this):
 for each color, average out every set of rgb values that was predicted to be 
 that color, and treat the resulting mean as the centroid
 then for each color that is predicted, take the euclidean distance between
-the input rgb, and the centroid rgb of that color
+the input rgb, and the centroid rgb of that color - DONE
+
+use object-oriented methods to create and visualise a weighted
+graph of colour synonyms where each node is the centroid of each
+unique colour name in the dataset connected to all other nodes by edges
+weighted by their distance - ???, seek clarification immeditaely
+
 """
 
-
-
 import pandas as pd
+import warnings
 import numpy as np
 import seaborn as sns
 import string
@@ -38,6 +43,8 @@ from statistics import mode
 from statistics import mean
 from random import randint
 from math import sqrt
+
+warnings.filterwarnings( "ignore", module = "matplotlib\..*" )
 
 def clean(df):
     colors_cleaned = [c.strip().lower().translate(string.punctuation) for c in df['colour_name']]
@@ -80,14 +87,15 @@ def preprocess(df):
     rgb = df.values  # x values, or the rgb values
 
     # setting up train/test
-    X_train, X_test, y_train, y_test = train_test_split(rgb, colors,
+    X_train, X_test_nonnormalized, y_train, y_test = train_test_split(rgb, colors,
                                             test_size=0.2, random_state=4)
 
     scaler = StandardScaler()
-    X_train, X_test = scaler.fit_transform(X_train), scaler.transform(X_test)
+    X_train, X_test = (scaler.fit_transform(X_train),
+                       scaler.transform(X_test_nonnormalized))
     # need to normalize input values
 
-    return X_train, X_test, y_train, y_test
+    return X_train, X_test, y_train, y_test, X_test_nonnormalized
 
 def regress(upper_bound, X_train, X_test, y_train, y_test):
     # each element of fitness_scores will be an array of:
@@ -101,7 +109,7 @@ def regress(upper_bound, X_train, X_test, y_train, y_test):
 
         knn.fit(X_train, y_train) # fit the model
         y_pred = knn.predict(X_test) # test the model on test values
-        print(y_pred)
+        # print(y_pred)
 
         prec = round(precision_score(y_pred, y_test, average='weighted',
                                      zero_division=0), 3)
@@ -119,8 +127,28 @@ def regress(upper_bound, X_train, X_test, y_train, y_test):
               f"neighbor(s) are {prec}, {rec}, and {f1} respectively")
         # print performance of each one
 
+    # recall score is the most accurate measure of fitness for knn
+    # return the number of neighbors that resulted in the highest accuracy measure
+    best_fit_neighbors = max([f[2] for f in fitness_scores])
 
-    return fitness_scores, knn
+    return fitness_scores, knn, y_pred, best_fit_neighbors
+    # return fitness_scores for use in fitness_graphs
+    # return knn for use in predictions_vs_centroids
+    # return y_pred for use in 3d scatter plot
+
+def three_d_scatter(X_test, y_pred, n_neighbors):
+    fig = plt.figure(figsize=(15, 15))
+    ax = fig.add_subplot(projection='3d')
+
+    x_values = [x[0] for x in X_test]
+    y_values = [x[1] for x in X_test]
+    z_values = [x[2] for x in X_test]
+
+    for i in range(len(x_values)):
+        ax.scatter(x_values[i], y_values[i], z_values[i],
+                   c=(x_values[i] / 255, y_values[i] / 255, z_values[i] / 255))
+        ax.text(x_values[i], y_values[i], z_values[i], y_pred[i], size=13, zorder=1)
+    plt.show()
 
 # graph all of the fitness scores with n_neighbors in a multi line graph
 def fitness_graphs(fitness_scores):
@@ -166,14 +194,18 @@ def generate_centroids(df):
 
     return color_to_rgb_centroid
 
-def predictions_vs_centroids(df, knn, centroids, loops=10):
+def predictions_vs_centroids(df, knn, centroids, X_test, loops=10):
     """
     then for each color that is predicted, take the euclidean distance between
     the input rgb, and the centroid rgb of that color
     """
     distances = []
+    l = len(X_test)
+
     for i in range(1, loops + 1):
-        r, g, b = randint(0, 255), randint(0, 255), randint(0, 255)
+        index = randint(0, l)
+        r, g, b = X_test[index][0], X_test[index][1], X_test[index][2]
+        # r, g, b = randint(0, 255), randint(0, 255), randint(0, 255)
         # random rgb to use for this step
         prediction = knn.predict([[r, g, b]])[0]
         # trained knn is passed as function input, this predicts on random rgb
@@ -204,14 +236,15 @@ def main():
     df = pd.read_csv('colour_naming_data-1.csv')
     df = clean(df)
     df2 = unique_rgb_parsing(df) # df2 will be the dataframe with unique values
-    X_train, X_test, y_train, y_test = preprocess(df2) # returns train/test values
-    fitness_scores, knn = regress(32, X_train, X_test, y_train, y_test)
+    X_train, X_test, y_train, y_test, X_test_nonnormalized = preprocess(df2) # returns train/test values
+    fitness_scores, knn, y_pred, n_neighbors = regress(32, X_train, X_test, y_train, y_test)
+    three_d_scatter(X_test_nonnormalized, y_pred, n_neighbors)
     # generates fitness scores with the train/test values
     # returns fitness scores and the trained neural network
     fitness_graphs(fitness_scores) # generates graphs from fitness_scores
 
     centroids = generate_centroids(df) # use original df that has duplicates for this
-    predictions_vs_centroids(df, knn, centroids, 10)
+    predictions_vs_centroids(df, knn, centroids, X_test,10)
 
 if __name__ == '__main__':
     main()
