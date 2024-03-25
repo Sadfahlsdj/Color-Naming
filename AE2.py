@@ -247,18 +247,20 @@ def predictions_vs_centroids(df, knn, centroids, X_test, loops=10):
     plt.show()
 
 def distance_normalized(r1, g1, b1, r2, g2, b2):
+    """
     # helper function for weighted_graph
     # so the arithmetic doesnt take up as much space
+    # returns the euclidean distance between two colors divided by sqrt(255^2 * 3)
+    # this is a number from 0-1, and gets higher if two colors are further apart
+    """
     return sqrt((r1 - r2) ** 2 + (g1 - g2) ** 2 + (b1 - b2) ** 2) / sqrt(255 ** 2 * 3)
 def weighted_graph(centroids, most_common_colors):
     """Alice uses object-oriented methods to create and visualise a weighted
     graph of colour synonyms where each node is the centroid of each
     unique colour name in the dataset connected to all other nodes by edges
     weighted by their distance.
-
-    TODO
-    make the graph look not horrible
     """
+
     G_full = nx.Graph()
     G = nx.Graph()
     # G_full will include all of the colors together
@@ -267,40 +269,54 @@ def weighted_graph(centroids, most_common_colors):
 
     for i in range(len(centroids)):
         for j in range(i + 1, len(centroids)):
-            G_full.add_edge(centroids[i][0], centroids[j][0], weight=distance_normalized(
-                centroids[i][1], centroids[j][1], centroids[i][2], centroids[j][2], centroids[i][3],
-                centroids[j][3]
+            G_full.add_edge(centroids[i][0], centroids[j][0],
+                weight=round(distance_normalized(centroids[i][1],
+                    centroids[j][1], centroids[i][2], centroids[j][2],
+                        centroids[i][3],centroids[j][3]), 3
             ))
             if (centroids[i][0] in most_common_colors
                     and centroids[j][0] in most_common_colors):
                 # the 10 most commonly guessed colors in displayed graph
-                G.add_edge(centroids[i][0], centroids[j][0], weight=distance_normalized(
-                    centroids[i][1], centroids[j][1], centroids[i][2], centroids[j][2], centroids[i][3],
-                    centroids[j][3]
-                ))
-
-    # two different edge lengths depending on weight
-    # elarge will have colors that are "farther apart" with a larger distance
-    elarge = [(u, v) for (u, v, d) in G.edges(data=True) if d["weight"] > 0.5]
-    esmall = [(u, v) for (u, v, d) in G.edges(data=True) if d["weight"] <= 0.5]
+                G.add_edge(centroids[i][0], centroids[j][0],
+                    weight=round(distance_normalized(centroids[i][1],
+                         centroids[j][1], centroids[i][2], centroids[j][2],
+                         centroids[i][3], centroids[j][3]), 3
+                             ))
 
     pos = nx.spring_layout(G, seed=7)
     # positions for all nodes - seeded for reproducibility
+
+    # node labels
+    nx.draw_networkx_labels(G, pos, font_size=9, font_family="sans-serif",
+                            font_color='purple',verticalalignment='top')
 
     # nodes
     nx.draw_networkx_nodes(G, pos, node_size=2)
 
     # edges
-    nx.draw_networkx_edges(G, pos, edgelist=elarge, width=1)
+    edges,weights = zip(*nx.get_edge_attributes(G,'weight').items())
+    # this creates two tuples: edges is a tuple of pairs of colors which represent connections
+    # weights is a tuple of floats from 0-1 that represent the weights in order
+    weights = tuple([1 - w for w in weights])
+    # original weights get higher as the colors are further apart
+    # this is counterintuitive, so weights = 1 - weights rectifies that
+    print(edges)
+    print(weights)
+
     nx.draw_networkx_edges(
-        # farther apart colors have the solid lines at the moment
-        # closer color have dotted lines
-        G, pos, edgelist=esmall, width=1, alpha=0.5, edge_color="b", style="dashed"
-    )
+        G, pos, edgelist=edges, width=1, alpha=0.3, edge_color=weights,
+        edge_cmap=plt.cm.inferno, style="dashed")
+        # higher weights (further apart) tend towards purple-ish
+        # lower weights (closer together) tend towards orange or yellow
 
-    # node labels
-    nx.draw_networkx_labels(G, pos, font_size=7, font_family="sans-serif")
+    # edge weight labels
+    edge_labels = nx.get_edge_attributes(G, "weight")
+    nx.draw_networkx_edge_labels(G, pos, edge_labels, font_size=7, label_pos=0.2)
 
+    ax = plt.gca()
+    ax.margins(0.05)
+    plt.axis("off")
+    plt.tight_layout()
     plt.show()
 
 def main():
