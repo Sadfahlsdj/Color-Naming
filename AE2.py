@@ -55,6 +55,13 @@ def clean(df):
     df['color'] = colors_cleaned  # processed color names
 
     return df
+
+# returns the 10 most common predicted color names
+# will be used to generate the weighted graph
+# since generating a graph for all ~600 unique colors is not feasible
+def most_common_colors(df, n):
+    # n is the number of most common colors to be generated
+    return df['color'].value_counts()[:n].index.tolist()
 def unique_rgb_parsing(df):
     # finding most common color prediction per rgb value
     rgb_to_color = {} # dict used to store color predictions per rgb
@@ -129,15 +136,20 @@ def regress(upper_bound, X_train, X_test, y_train, y_test):
         # print performance of each one
 
     # recall score is the most accurate measure of fitness for knn
-    # return the number of neighbors that resulted in the highest accuracy measure
-    best_fit_neighbors = max([f[2] for f in fitness_scores])
+    # get the number of neighbors that resulted in the highest accuracy measure
+    recall_scores = [f[2] for f in fitness_scores]
+    best_n_neighbors = recall_scores.index(max(recall_scores)) + 1
 
-    return fitness_scores, knn, y_pred, best_fit_neighbors
+    best_knn = KNeighborsClassifier(n_neighbors=best_n_neighbors)
+    best_knn.fit(X_train, y_train)
+    # fit the best knn to the same training data
+
+    return fitness_scores, best_knn, y_pred
     # return fitness_scores for use in fitness_graphs
-    # return knn for use in predictions_vs_centroids
+    # return knn with highest recall score for use in predictions_vs_centroids
     # return y_pred for use in 3d scatter plot
 
-def three_d_scatter(X_test, y_pred, n_neighbors):
+def three_d_scatter(X_test, y_pred):
     fig = plt.figure(figsize=(15, 15))
     ax = fig.add_subplot(projection='3d')
 
@@ -225,7 +237,7 @@ def predictions_vs_centroids(df, knn, centroids, X_test, loops=10):
 
     # create bar graph
     fig, ax = plt.subplots()
-    print(distances)
+    # print(distances)
 
     colors = [[rgb[0][0], rgb[0][1], rgb[0][2]] for rgb in distances]
     color = [(c[0] / 255, c[1] / 255, c[2] / 255) for c in colors]
@@ -235,18 +247,23 @@ def predictions_vs_centroids(df, knn, centroids, X_test, loops=10):
     plt.show()
 
 def distance_normalized(r1, g1, b1, r2, g2, b2):
+    # helper function for weighted_graph
+    # so the arithmetic doesnt take up as much space
     return sqrt((r1 - r2) ** 2 + (g1 - g2) ** 2 + (b1 - b2) ** 2) / sqrt(255 ** 2 * 3)
-def weighted_graph(centroids):
+def weighted_graph(centroids, most_common_colors):
     """Alice uses object-oriented methods to create and visualise a weighted
     graph of colour synonyms where each node is the centroid of each
     unique colour name in the dataset connected to all other nodes by edges
     weighted by their distance.
+
+    TODO
+    make the graph look not horrible
     """
     G_full = nx.Graph()
     G = nx.Graph()
     # G_full will include all of the colors together
-    # G will be the graph to be displayed, which only has 10 colors
-    # and their corresponding connections
+    # G will be the graph to be displayed, which only has
+    # connections between the 10 most commonly guessed colors
 
     for i in range(len(centroids)):
         for j in range(i + 1, len(centroids)):
@@ -254,8 +271,9 @@ def weighted_graph(centroids):
                 centroids[i][1], centroids[j][1], centroids[i][2], centroids[j][2], centroids[i][3],
                 centroids[j][3]
             ))
-            if i <= 10 and j <= 10:
-                # creation of the smaller graph
+            if (centroids[i][0] in most_common_colors
+                    and centroids[j][0] in most_common_colors):
+                # the 10 most commonly guessed colors in displayed graph
                 G.add_edge(centroids[i][0], centroids[j][0], weight=distance_normalized(
                     centroids[i][1], centroids[j][1], centroids[i][2], centroids[j][2], centroids[i][3],
                     centroids[j][3]
@@ -288,10 +306,11 @@ def weighted_graph(centroids):
 def main():
     df = pd.read_csv('colour_naming_data-1.csv')
     df = clean(df)
+    common_colors = most_common_colors(df, 10)
     df2 = unique_rgb_parsing(df) # df2 will be the dataframe with unique values
     X_train, X_test, y_train, y_test, X_test_nonnormalized = preprocess(df2) # returns train/test values
-    fitness_scores, knn, y_pred, n_neighbors = regress(32, X_train, X_test, y_train, y_test)
-    three_d_scatter(X_test_nonnormalized, y_pred, n_neighbors)
+    fitness_scores, knn, y_pred = regress(32, X_train, X_test, y_train, y_test)
+    three_d_scatter(X_test_nonnormalized, y_pred)
     # generates fitness scores with the train/test values
     # returns fitness scores and the trained neural network
     fitness_graphs(fitness_scores) # generates graphs from fitness_scores
@@ -299,7 +318,7 @@ def main():
     centroids_dict, centroids_list = generate_centroids(df) # use original df that has duplicates for this
     predictions_vs_centroids(df, knn, centroids_dict, X_test,10)
 
-    weighted_graph(centroids_list)
+    weighted_graph(centroids_list, common_colors)
 
 if __name__ == '__main__':
     main()
