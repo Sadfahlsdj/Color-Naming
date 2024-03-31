@@ -142,6 +142,7 @@ def regress(upper_bound, X_train, X_test, y_train, y_test):
 
     best_knn = KNeighborsClassifier(n_neighbors=best_n_neighbors)
     best_knn.fit(X_train, y_train)
+    y_pred = best_knn.predict(X_test)
     # fit the best knn to the same training data
 
     return fitness_scores, best_knn, y_pred
@@ -183,7 +184,7 @@ def fitness_graphs(fitness_scores):
 
 def generate_centroids(df):
     """
-    for the centroids of the colors (part 2) (use original dataset for this):
+    (use original dataset for this):
     for each color, average out every set of rgb values that was predicted to be
     that color, and treat the resulting mean as the centroid
     """
@@ -325,7 +326,7 @@ def main():
     common_colors = most_common_colors(df, 10)
     df2 = unique_rgb_parsing(df) # df2 will be the dataframe with unique values
     X_train, X_test, y_train, y_test, X_test_nonnormalized = preprocess(df2) # returns train/test values
-    fitness_scores, knn, y_pred = regress(32, X_train, X_test, y_train, y_test)
+    fitness_scores, knn, y_pred = regress(12, X_train, X_test, y_train, y_test)
     three_d_scatter(X_test_nonnormalized, y_pred)
     # generates fitness scores with the train/test values
     # returns fitness scores and the trained neural network
